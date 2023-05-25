@@ -15,7 +15,7 @@ jobs:
       contents: write
     strategy:
       matrix:
-        package: [even]
+        package: [even, odd]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
