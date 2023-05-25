@@ -13,27 +13,72 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    strategy:
-      matrix:
-        package: [even, odd]
-    defaults:
-      run:
-        working-directory: packages/${{ matrix.package }}
 
     steps:
     - uses: actions/checkout@v3
-
-    - name: Bump version and push tag
-      id: tag_version
-      uses: mathieudutour/github-tag-action@v6.1
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        default_bump: patch
-        tag_prefix: packages/${{ matrix.package }}/v
-
-    # - name: Create a GitHub release
-    #   uses: ncipollo/release-action@v1
-    #   with:
-    #     tag: ${{ steps.tag_version.outputs.new_tag }}
-    #     name: Release ${{ steps.tag_version.outputs.new_tag }}
-    #     body: ${{ steps.tag_version.outputs.changelog }}
+        fetch-depth: 0
+    - uses: actions/setup-go@v4
+      with:
+        go-version: '^1.20.0'
+    - name: Check builds
+      shell: bash
+      run: |
+        echo "$(go version)"
+        cd packages/
+        for folder in */; do
+          cd "$folder"
+          echo "Building $folder..."
+          go build -v
+          if [[ $? -eq 0 ]]; then
+            echo "Built $folder."
+          else
+            echo "Building $folder failed."
+            exit 1
+          fi
+          cd ..
+        done
+    - name: Find the version bump
+      id: find_version_bump
+      shell: bash
+      run: |
+        echo "$(go version)"
+        COMMIT_MESSAGE='${{ github.event.head_commit.message }}'
+        VERSION_BUMP="patch"
+        if [[ $COMMIT_MESSAGE =~ ^(feat!).*$ ]]; then
+          VERSION_BUMP="major"
+        elif [[ $COMMIT_MESSAGE =~ ^(feat).*$ ]]; then
+          VERSION_BUMP="minor"
+        fi
+        echo "Selected version bump: $VERSION_BUMP"
+        echo "::set-output name=versionBump::$VERSION_BUMP"
+    - name: Setup semver and make the version bump
+      id: make_version_bump
+      shell: bash
+      run: |
+        SEMVER_PATH=$(pwd)
+        wget -O $SEMVER_PATH/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
+        chmod +x $SEMVER_PATH/semver
+        echo "$($SEMVER_PATH/semver --version)"
+        cd packages/
+        for folder in */; do
+          folder=${folder%/}
+          echo "Checking for $folder..."
+          cd "$folder"
+          PREFIX_MATCH="packages/$folder"
+          echo "Prefix match: $PREFIX_MATCH"
+          LAST_VERSION=$(git describe --abbrev=0 --tags --match="$PREFIX_MATCH/*" 2>&1 | grep -Po "(?<=$PREFIX_MATCH/)(.*)")
+          echo "Last version: $LAST_VERSION"
+          if [[ $LAST_VERSION == "" ]];
+          then
+            LAST_VERSION="v0.0.0"
+          fi
+          NEW_VERSION=$($SEMVER_PATH/semver bump ${{ steps.find_version_bump.outputs.versionBump }} $LAST_VERSION)
+          echo "New version: $NEW_VERSION"
+          NEW_TAG="$PREFIX_MATCH/v$NEW_VERSION"
+          echo "Creating tag $NEW_TAG"
+          git tag $NEW_TAG
+          git push origin $NEW_TAG
+          echo "\n"
+          cd ..
+        done
