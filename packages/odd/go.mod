@@ -2,4 +2,4 @@ module github.com/yashodhanmohan/go-multi-module-ci-cd/packages/odd
 
 go 1.20
 
-require github.com/yashodhanmohan/go-multi-module-ci-cd/packages/even v0.1.0
+require github.com/yashodhanmohan/go-multi-module-ci-cd/packages/even v0.2.0
